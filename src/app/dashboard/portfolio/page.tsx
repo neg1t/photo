@@ -1,9 +1,10 @@
 import Image from "next/image";
 
+import { DashboardFileUploadForm } from "@/components/dashboard/dashboard-file-upload-form";
 import { NoticeBanner } from "@/components/notice-banner";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { requireCurrentUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -35,23 +36,19 @@ export default async function PortfolioPage({
           тот же общий лимит хранилища.
         </p>
 
-        <form
-          action="/dashboard/portfolio/upload"
-          method="post"
-          encType="multipart/form-data"
-          className="mt-6 flex flex-col gap-4 rounded-[24px] bg-[#f8f1e7] p-4 lg:flex-row lg:items-center"
-        >
-          <input
-            type="file"
-            name="portfolio"
+        <div className="mt-6 flex flex-col gap-4 rounded-[24px] bg-[#f8f1e7] p-4 lg:flex-row lg:items-center lg:justify-between">
+          <p className="text-sm text-[var(--muted-foreground)]">
+            JPG, PNG и WebP. После выбора файлов загрузка начнется сразу.
+          </p>
+          <DashboardFileUploadForm
+            action="/dashboard/portfolio/upload"
+            inputName="portfolio"
             accept="image/jpeg,image/png,image/webp"
-            multiple
-            className="block flex-1 text-sm text-[var(--muted-foreground)]"
+            buttonLabel="Добавить в портфолио"
+            pendingLabel="Загружаем портфолио..."
+            disabled={!canUpload}
           />
-          <Button type="submit" disabled={!canUpload}>
-            Добавить в портфолио
-          </Button>
-        </form>
+        </div>
       </Card>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">

@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 
+import { DashboardFileUploadForm } from "@/components/dashboard/dashboard-file-upload-form";
 import { NoticeBanner } from "@/components/notice-banner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -33,8 +34,9 @@ export default async function CollectionsPage({
           Новая съемка
         </h2>
         <p className="mt-3 max-w-2xl text-sm leading-7 text-[var(--muted-foreground)]">
-          Создайте коллекцию, укажите срок хранения и сразу загрузите фотографии
-          пачкой. После публикации клиент откроет галерею по отдельной ссылке.
+          Создайте коллекцию, укажите срок хранения и сразу загрузите
+          фотографии пачкой. После публикации клиент откроет галерею по
+          отдельной ссылке.
         </p>
 
         <form
@@ -42,7 +44,10 @@ export default async function CollectionsPage({
           method="post"
           className="mt-6 grid gap-4 md:grid-cols-[minmax(0,1fr)_220px_180px]"
         >
-          <Input name="title" placeholder="Например, Love story • Марина и Илья" />
+          <Input
+            name="title"
+            placeholder="Например, Love story • Марина и Илья"
+          />
           <Input name="expiresAt" type="date" />
           <Button type="submit" disabled={!canUpload}>
             Создать коллекцию
@@ -67,7 +72,8 @@ export default async function CollectionsPage({
                     <Badge>{collection.status}</Badge>
                   </div>
                   <p className="text-sm text-[var(--muted-foreground)]">
-                    Хранение до {collection.expiresAt.toLocaleDateString("ru-RU")} •{" "}
+                    Хранение до{" "}
+                    {collection.expiresAt.toLocaleDateString("ru-RU")} •{" "}
                     {collection.photos.length} фото
                   </p>
                   {publicLink ? (
@@ -95,23 +101,19 @@ export default async function CollectionsPage({
                 </div>
               </div>
 
-              <form
-                action={`/dashboard/collections/${collection.id}/upload`}
-                method="post"
-                encType="multipart/form-data"
-                className="mt-6 flex flex-col gap-4 rounded-[24px] bg-[#f8f1e7] p-4 lg:flex-row lg:items-center"
-              >
-                <input
-                  type="file"
-                  name="photos"
+              <div className="mt-6 flex flex-col gap-4 rounded-[24px] bg-[#f8f1e7] p-4 lg:flex-row lg:items-center lg:justify-between">
+                <p className="text-sm text-[var(--muted-foreground)]">
+                  JPG, PNG и WebP. После выбора файлов загрузка начнется сразу.
+                </p>
+                <DashboardFileUploadForm
+                  action={`/dashboard/collections/${collection.id}/upload`}
+                  inputName="photos"
                   accept="image/jpeg,image/png,image/webp"
-                  multiple
-                  className="block flex-1 text-sm text-[var(--muted-foreground)]"
+                  buttonLabel="Загрузить фото"
+                  pendingLabel="Загружаем фото..."
+                  disabled={!canUpload}
                 />
-                <Button type="submit" disabled={!canUpload}>
-                  Загрузить фото
-                </Button>
-              </form>
+              </div>
 
               {collection.photos.length ? (
                 <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -132,7 +134,9 @@ export default async function CollectionsPage({
                         <div className="aspect-[4/3] bg-[#efe3d3]" />
                       )}
                       <div className="p-3 text-sm">
-                        <p className="line-clamp-1 font-medium">{photo.originalName}</p>
+                        <p className="line-clamp-1 font-medium">
+                          {photo.originalName}
+                        </p>
                       </div>
                     </div>
                   ))}

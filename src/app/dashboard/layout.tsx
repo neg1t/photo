@@ -1,21 +1,28 @@
 import Link from "next/link";
-import { LayoutDashboard, FolderOpen, Images, BriefcaseBusiness, UserRound, Shield } from "lucide-react";
+import {
+  BriefcaseBusiness,
+  FolderOpen,
+  Images,
+  LayoutDashboard,
+  Shield,
+  UserRound,
+} from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { env } from "@/lib/env";
 import { requireCurrentUser } from "@/lib/session";
 import { formatBytes } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
-const navigation = [
+const baseNavigation = [
   { href: "/dashboard", label: "Обзор", icon: LayoutDashboard },
   { href: "/dashboard/collections", label: "Коллекции", icon: FolderOpen },
   { href: "/dashboard/portfolio", label: "Портфолио", icon: Images },
   { href: "/dashboard/services", label: "Услуги", icon: BriefcaseBusiness },
   { href: "/dashboard/profile", label: "Профиль", icon: UserRound },
-  { href: "/dashboard/admin", label: "Админка", icon: Shield },
 ];
 
 export default async function DashboardLayout({
@@ -27,6 +34,9 @@ export default async function DashboardLayout({
   const usagePercent = Number(
     (user.storageUsedBytes * 100n) / (user.storageLimitBytes || 1n),
   );
+  const navigation = env.auth.adminEmails.includes(user.email.toLowerCase())
+    ? [...baseNavigation, { href: "/dashboard/admin", label: "Админка", icon: Shield }]
+    : baseNavigation;
 
   return (
     <div className="shell grid min-h-screen gap-6 py-6 lg:grid-cols-[280px_minmax(0,1fr)]">
