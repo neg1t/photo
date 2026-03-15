@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { AlertTriangle, ArrowRight } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 
+import { GoogleSignInButton } from "@/components/auth/google-sign-in-button";
+import { NoticeBanner } from "@/components/notice-banner";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { getServerAuthSession } from "@/lib/auth";
 import { env } from "@/lib/env";
@@ -14,11 +15,35 @@ type LoginPageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
+function getLoginErrorMessage(error?: string) {
+  if (!error) {
+    return undefined;
+  }
+
+  switch (error) {
+    case "google":
+    case "OAuthSignin":
+      return "Не удалось начать вход через Google. Повторите попытку еще раз.";
+    case "OAuthCallback":
+      return "Google не подтвердил вход. Попробуйте авторизоваться еще раз.";
+    case "AccessDenied":
+      return "Доступ к аккаунту не был подтвержден.";
+    case "Configuration":
+      return "Авторизация временно недоступна из-за конфигурации сервиса.";
+    default:
+      return "Не удалось выполнить вход. Повторите попытку немного позже.";
+  }
+}
+
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   const session = await getServerAuthSession();
   const params = await searchParams;
   const callbackUrl =
     typeof params.callbackUrl === "string" ? params.callbackUrl : "/dashboard";
+  const error =
+    typeof params.error === "string"
+      ? getLoginErrorMessage(params.error)
+      : undefined;
 
   if (session?.user) {
     redirect(callbackUrl);
@@ -35,15 +60,13 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           Для MVP вход выполняется через Google OAuth. После первого входа
           аккаунт и публичный профиль создаются автоматически.
         </p>
+        <div className="mt-6">
+          <NoticeBanner error={error} />
+        </div>
 
         {env.auth.isGoogleConfigured ? (
           <div className="mt-8">
-            <Button asChild className="w-full">
-              <a href={`/api/auth/signin/google?callbackUrl=${encodeURIComponent(callbackUrl)}`}>
-                Продолжить через Google
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </a>
-            </Button>
+            <GoogleSignInButton callbackUrl={callbackUrl} />
           </div>
         ) : (
           <div className="mt-8 rounded-[28px] border border-[#d2b58a] bg-[#fff7ea] p-5 text-sm text-[#7d5525]">
