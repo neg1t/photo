@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import type { Prisma } from "@prisma/client";
 
 import { NoticeBanner } from "@/components/notice-banner";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +15,12 @@ type AdminPageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
+type AdminUser = Prisma.UserGetPayload<{
+  include: {
+    profile: true;
+  };
+}>;
+
 export default async function AdminPage({ searchParams }: AdminPageProps) {
   const user = await requireCurrentUser();
 
@@ -24,7 +31,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
   const params = await searchParams;
   const error = typeof params.error === "string" ? params.error : undefined;
   const success = typeof params.success === "string" ? params.success : undefined;
-  const users = await prisma.user.findMany({
+  const users: AdminUser[] = await prisma.user.findMany({
     include: {
       profile: true,
     },
@@ -47,7 +54,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
       </Card>
 
       <div className="grid gap-4">
-        {users.map((targetUser) => (
+        {users.map((targetUser: AdminUser) => (
           <Card
             key={targetUser.id}
             className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between"
