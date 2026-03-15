@@ -19,3 +19,17 @@ export function createRedirectPath(
 
   return query ? `${pathname}?${query}` : pathname;
 }
+
+export function createSeeOtherRedirectResponse(
+  request: Request,
+  pathname: string,
+  options?: {
+    error?: string;
+    success?: string;
+  },
+) {
+  return Response.redirect(
+    new URL(createRedirectPath(pathname, options), request.url),
+    303,
+  );
+}

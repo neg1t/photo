@@ -1,6 +1,4 @@
-import { NextResponse } from "next/server";
-
-import { createRedirectPath } from "@/lib/http";
+import { createSeeOtherRedirectResponse } from "@/lib/http";
 import { requireRouteUser } from "@/lib/route-user";
 import { deletePhotographerService } from "@/lib/services/catalog-service";
 
@@ -15,25 +13,14 @@ export async function POST(request: Request, { params }: RouteProps) {
 
     await deletePhotographerService(user.id, serviceId);
 
-    return NextResponse.redirect(
-      new URL(
-        createRedirectPath("/dashboard/services", {
-          success: "Услуга удалена.",
-        }),
-        request.url,
-      ),
-    );
+    return createSeeOtherRedirectResponse(request, "/dashboard/services", {
+      success: "Услуга удалена.",
+    });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Не удалось удалить услугу.";
+    const message = error instanceof Error ? error.message : "Не удалось удалить услугу.";
 
-    return NextResponse.redirect(
-      new URL(
-        createRedirectPath("/dashboard/services", {
-          error: message,
-        }),
-        request.url,
-      ),
-    );
+    return createSeeOtherRedirectResponse(request, "/dashboard/services", {
+      error: message,
+    });
   }
 }

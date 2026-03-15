@@ -3,10 +3,38 @@ import { randomUUID } from "node:crypto";
 import { canManageProtectedContent } from "@/lib/core/access";
 import { ensureStorageQuota } from "@/lib/core/quota";
 import { prisma } from "@/lib/db";
+import { env } from "@/lib/env";
 import { AppError } from "@/lib/errors";
-import { processImageFile } from "@/lib/media";
-import { buildPortfolioAssetKeys } from "@/lib/storage/object-keys";
-import { deleteStorageObjects, putStorageObject } from "@/lib/storage/s3";
+import { processImageBuffer } from "@/lib/media";
+import {
+  buildPortfolioAssetKeys,
+  isSupportedImageMimeType,
+} from "@/lib/storage/object-keys";
+import {
+  createSignedUploadUrl,
+  deleteStorageObjects,
+  getStorageObject,
+  putStorageObject,
+} from "@/lib/storage/s3";
+import type { PreparedUpload, PreparedUploadToken, UploadFileInput } from "@/lib/uploads";
+
+function validateRequestedImageUpload(input: {
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+}) {
+  if (!isSupportedImageMimeType(input.mimeType)) {
+    throw new AppError("Поддерживаются только JPG, PNG и WebP.", 400);
+  }
+
+  if (BigInt(input.sizeBytes) > env.product.maxFileSizeBytes) {
+    throw new AppError("Файл превышает допустимый размер.", 400);
+  }
+}
+
+function normalizeMimeType(contentType: string) {
+  return contentType.split(";")[0]?.trim().toLowerCase() || "application/octet-stream";
+}
 
 async function requirePortfolioOwner(userId: string) {
   const user = await prisma.user.findUnique({
@@ -30,19 +58,79 @@ async function requirePortfolioOwner(userId: string) {
   return user;
 }
 
-export async function uploadPortfolioAssets(input: {
+export async function preparePortfolioAssetUploads(input: {
   userId: string;
-  files: File[];
+  files: UploadFileInput[];
 }) {
   if (!input.files.length) {
     throw new AppError("Выберите хотя бы один файл для портфолио.", 400);
   }
 
   const user = await requirePortfolioOwner(input.userId);
-  const uploadedKeys: string[] = [];
+  let projectedUsage = user.storageUsedBytes;
+  const preparedUploads: PreparedUpload[] = [];
+
+  for (const file of input.files) {
+    validateRequestedImageUpload({
+      fileName: file.name,
+      mimeType: file.type,
+      sizeBytes: file.size,
+    });
+
+    const quota = ensureStorageQuota({
+      currentUsageBytes: projectedUsage,
+      incomingBytes: BigInt(file.size),
+      limitBytes: user.storageLimitBytes,
+    });
+
+    if (!quota.allowed) {
+      throw new AppError("Лимит хранилища будет превышен.", 400);
+    }
+
+    const uploadId = randomUUID();
+    const keys = buildPortfolioAssetKeys({
+      userId: input.userId,
+      objectId: uploadId,
+      fileName: file.name,
+    });
+
+    preparedUploads.push({
+      uploadId,
+      fileName: file.name,
+      mimeType: file.type,
+      sizeBytes: file.size,
+      uploadUrl: await createSignedUploadUrl({
+        key: keys.originalKey,
+        contentType: file.type,
+      }),
+    });
+
+    projectedUsage += BigInt(file.size);
+  }
+
+  return preparedUploads;
+}
+
+export async function completePortfolioAssetUploads(input: {
+  userId: string;
+  uploads: PreparedUploadToken[];
+}) {
+  if (!input.uploads.length) {
+    throw new AppError("Выберите хотя бы один файл для портфолио.", 400);
+  }
+
+  const user = await requirePortfolioOwner(input.userId);
   const currentCount = await prisma.portfolioAsset.count({
     where: { userId: input.userId },
   });
+  const previewKeysToCleanup: string[] = [];
+  const originalKeysToCleanup = input.uploads.map((upload) =>
+    buildPortfolioAssetKeys({
+      userId: input.userId,
+      objectId: upload.uploadId,
+      fileName: upload.fileName,
+    }).originalKey,
+  );
   const preparedAssets: Array<{
     id: string;
     storageKey: string;
@@ -58,8 +146,24 @@ export async function uploadPortfolioAssets(input: {
   let totalOriginalBytes = 0n;
 
   try {
-    for (const [index, file] of input.files.entries()) {
-      const image = await processImageFile(file);
+    for (const [index, upload] of input.uploads.entries()) {
+      validateRequestedImageUpload({
+        fileName: upload.fileName,
+        mimeType: upload.mimeType,
+        sizeBytes: upload.sizeBytes,
+      });
+
+      const keys = buildPortfolioAssetKeys({
+        userId: input.userId,
+        objectId: upload.uploadId,
+        fileName: upload.fileName,
+      });
+      const storedObject = await getStorageObject(keys.originalKey);
+      const image = await processImageBuffer({
+        buffer: Buffer.from(storedObject.bytes),
+        fileName: upload.fileName,
+        mimeType: normalizeMimeType(storedObject.contentType),
+      });
       const quota = ensureStorageQuota({
         currentUsageBytes: projectedUsage,
         incomingBytes: image.originalSizeBytes,
@@ -70,29 +174,16 @@ export async function uploadPortfolioAssets(input: {
         throw new AppError("Лимит хранилища будет превышен.", 400);
       }
 
-      const objectId = randomUUID();
-      const keys = buildPortfolioAssetKeys({
-        userId: input.userId,
-        objectId,
-        fileName: image.originalName,
-      });
-
-      await putStorageObject({
-        key: keys.originalKey,
-        body: image.originalBuffer,
-        contentType: image.mimeType,
-      });
-      uploadedKeys.push(keys.originalKey);
       await putStorageObject({
         key: keys.previewKey,
         body: image.previewBuffer,
         contentType: "image/webp",
         cacheControl: "public, max-age=31536000, immutable",
       });
-      uploadedKeys.push(keys.previewKey);
+      previewKeysToCleanup.push(keys.previewKey);
 
       preparedAssets.push({
-        id: objectId,
+        id: upload.uploadId,
         storageKey: keys.originalKey,
         previewKey: keys.previewKey,
         originalName: image.originalName,
@@ -134,7 +225,7 @@ export async function uploadPortfolioAssets(input: {
 
     return preparedAssets.length;
   } catch (error) {
-    await deleteStorageObjects(uploadedKeys);
+    await deleteStorageObjects([...originalKeysToCleanup, ...previewKeysToCleanup]);
     throw error;
   }
 }

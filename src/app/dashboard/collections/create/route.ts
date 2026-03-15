@@ -1,8 +1,6 @@
-import { NextResponse } from "next/server";
-
-import { createCollectionForUser } from "@/lib/services/collections-service";
+import { createSeeOtherRedirectResponse } from "@/lib/http";
 import { requireRouteUser } from "@/lib/route-user";
-import { createRedirectPath } from "@/lib/http";
+import { createCollectionForUser } from "@/lib/services/collections-service";
 
 export async function POST(request: Request) {
   try {
@@ -14,25 +12,14 @@ export async function POST(request: Request) {
       expiresAt: String(formData.get("expiresAt") ?? ""),
     });
 
-    return NextResponse.redirect(
-      new URL(
-        createRedirectPath("/dashboard/collections", {
-          success: "Коллекция создана.",
-        }),
-        request.url,
-      ),
-    );
+    return createSeeOtherRedirectResponse(request, "/dashboard/collections", {
+      success: "Коллекция создана.",
+    });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Не удалось создать коллекцию.";
+    const message = error instanceof Error ? error.message : "Не удалось создать коллекцию.";
 
-    return NextResponse.redirect(
-      new URL(
-        createRedirectPath("/dashboard/collections", {
-          error: message,
-        }),
-        request.url,
-      ),
-    );
+    return createSeeOtherRedirectResponse(request, "/dashboard/collections", {
+      error: message,
+    });
   }
 }

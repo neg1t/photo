@@ -1,6 +1,4 @@
-import { NextResponse } from "next/server";
-
-import { createRedirectPath } from "@/lib/http";
+import { createSeeOtherRedirectResponse } from "@/lib/http";
 import { requireRouteUser } from "@/lib/route-user";
 import { createPhotographerService } from "@/lib/services/catalog-service";
 
@@ -17,25 +15,14 @@ export async function POST(request: Request) {
       priceType,
     });
 
-    return NextResponse.redirect(
-      new URL(
-        createRedirectPath("/dashboard/services", {
-          success: "Услуга добавлена.",
-        }),
-        request.url,
-      ),
-    );
+    return createSeeOtherRedirectResponse(request, "/dashboard/services", {
+      success: "Услуга добавлена.",
+    });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Не удалось сохранить услугу.";
+    const message = error instanceof Error ? error.message : "Не удалось сохранить услугу.";
 
-    return NextResponse.redirect(
-      new URL(
-        createRedirectPath("/dashboard/services", {
-          error: message,
-        }),
-        request.url,
-      ),
-    );
+    return createSeeOtherRedirectResponse(request, "/dashboard/services", {
+      error: message,
+    });
   }
 }

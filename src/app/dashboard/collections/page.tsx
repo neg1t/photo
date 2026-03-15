@@ -106,8 +106,8 @@ export default async function CollectionsPage({
                   JPG, PNG и WebP. После выбора файлов загрузка начнется сразу.
                 </p>
                 <DashboardFileUploadForm
-                  action={`/dashboard/collections/${collection.id}/upload`}
-                  inputName="photos"
+                  endpoint={`/dashboard/collections/${collection.id}/upload`}
+                  resultPath="/dashboard/collections"
                   accept="image/jpeg,image/png,image/webp"
                   buttonLabel="Загрузить фото"
                   pendingLabel="Загружаем фото..."

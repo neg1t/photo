@@ -6,6 +6,7 @@ import {
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 import { env } from "@/lib/env";
 
@@ -62,6 +63,26 @@ export async function putStorageObject(input: {
   );
 
   return { key: input.key };
+}
+
+export async function createSignedUploadUrl(input: {
+  key: string;
+  contentType: string;
+  expiresInSeconds?: number;
+}) {
+  await ensureBucketExists();
+
+  return getSignedUrl(
+    s3Client,
+    new PutObjectCommand({
+      Bucket: env.storage.bucket,
+      Key: input.key,
+      ContentType: input.contentType,
+    }),
+    {
+      expiresIn: input.expiresInSeconds ?? 300,
+    },
+  );
 }
 
 export async function getStorageObject(key: string) {

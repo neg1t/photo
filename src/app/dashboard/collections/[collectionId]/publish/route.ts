@@ -1,6 +1,4 @@
-import { NextResponse } from "next/server";
-
-import { createRedirectPath } from "@/lib/http";
+import { createSeeOtherRedirectResponse } from "@/lib/http";
 import { requireRouteUser } from "@/lib/route-user";
 import { publishCollectionForUser } from "@/lib/services/collections-service";
 
@@ -15,25 +13,15 @@ export async function POST(request: Request, { params }: RouteProps) {
 
     await publishCollectionForUser(user.id, collectionId);
 
-    return NextResponse.redirect(
-      new URL(
-        createRedirectPath("/dashboard/collections", {
-          success: "Коллекция опубликована.",
-        }),
-        request.url,
-      ),
-    );
+    return createSeeOtherRedirectResponse(request, "/dashboard/collections", {
+      success: "Коллекция опубликована.",
+    });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Не удалось опубликовать коллекцию.";
 
-    return NextResponse.redirect(
-      new URL(
-        createRedirectPath("/dashboard/collections", {
-          error: message,
-        }),
-        request.url,
-      ),
-    );
+    return createSeeOtherRedirectResponse(request, "/dashboard/collections", {
+      error: message,
+    });
   }
 }

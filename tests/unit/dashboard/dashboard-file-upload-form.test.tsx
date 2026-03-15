@@ -1,16 +1,34 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const { pushMock, refreshMock } = vi.hoisted(() => ({
+  pushMock: vi.fn(),
+  refreshMock: vi.fn(),
+}));
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: pushMock,
+    refresh: refreshMock,
+  }),
+}));
 
 import { DashboardFileUploadForm } from "@/components/dashboard/dashboard-file-upload-form";
 
 describe("DashboardFileUploadForm", () => {
+  beforeEach(() => {
+    pushMock.mockReset();
+    refreshMock.mockReset();
+    vi.unstubAllGlobals();
+  });
+
   it("opens the file picker when the button is clicked", async () => {
     const user = userEvent.setup();
     const { container } = render(
       <DashboardFileUploadForm
-        action="/dashboard/collections/demo/upload"
-        inputName="photos"
+        endpoint="/dashboard/collections/demo/upload"
+        resultPath="/dashboard/collections"
         accept="image/jpeg,image/png,image/webp"
         buttonLabel="Загрузить фото"
         pendingLabel="Загружаем фото..."
@@ -23,72 +41,126 @@ describe("DashboardFileUploadForm", () => {
       throw new Error("File input not found");
     }
 
-    const clickSpy = vi.spyOn(input, "click");
+    const clickSpy = vi.spyOn(input as HTMLInputElement, "click");
 
     await user.click(screen.getByRole("button", { name: "Загрузить фото" }));
 
     expect(clickSpy).toHaveBeenCalledTimes(1);
   });
 
-  it("submits the form automatically after files are selected", async () => {
+  it("uploads selected files via signed urls and redirects to the success banner", async () => {
     const user = userEvent.setup();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            uploads: [
+              {
+                uploadId: "upload-1",
+                fileName: "demo.jpg",
+                mimeType: "image/jpeg",
+                sizeBytes: 4,
+                uploadUrl: "https://storage.example/upload-1",
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+            },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            redirectTo:
+              "/dashboard/collections?success=%D0%A4%D0%BE%D1%82%D0%BE%D0%B3%D1%80%D0%B0%D1%84%D0%B8%D0%B8",
+          }),
+          {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+            },
+          },
+        ),
+      );
+
     const { container } = render(
       <DashboardFileUploadForm
-        action="/dashboard/collections/demo/upload"
-        inputName="photos"
+        endpoint="/dashboard/collections/demo/upload"
+        resultPath="/dashboard/collections"
         accept="image/jpeg,image/png,image/webp"
         buttonLabel="Загрузить фото"
         pendingLabel="Загружаем фото..."
       />,
     );
 
-    const form = container.querySelector("form");
     const input = container.querySelector('input[type="file"]');
 
-    if (!form || !input) {
-      throw new Error("Upload form markup not found");
+    if (!input) {
+      throw new Error("Upload input markup not found");
     }
-
-    const requestSubmit = vi.fn();
-    Object.defineProperty(form, "requestSubmit", {
-      value: requestSubmit,
-      configurable: true,
-    });
 
     await user.upload(
       input as HTMLInputElement,
       new File(["demo"], "demo.jpg", { type: "image/jpeg" }),
     );
 
-    expect(requestSubmit).toHaveBeenCalledTimes(1);
-    expect(
-      screen.getByRole("button", { name: "Загружаем фото..." }),
-    ).toBeDisabled();
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/dashboard/collections/demo/upload",
+      expect.objectContaining({
+        method: "POST",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "https://storage.example/upload-1",
+      expect.objectContaining({
+        method: "PUT",
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/dashboard/collections/demo/upload",
+      expect.objectContaining({
+        method: "POST",
+      }),
+    );
+    expect(pushMock).toHaveBeenCalledWith(
+      "/dashboard/collections?success=%D0%A4%D0%BE%D1%82%D0%BE%D0%B3%D1%80%D0%B0%D1%84%D0%B8%D0%B8",
+    );
+    expect(refreshMock).toHaveBeenCalledTimes(1);
   });
 
-  it("does not submit the form when file selection is canceled", () => {
+  it("does not start upload when file selection is canceled", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
     const { container } = render(
       <DashboardFileUploadForm
-        action="/dashboard/collections/demo/upload"
-        inputName="photos"
+        endpoint="/dashboard/collections/demo/upload"
+        resultPath="/dashboard/collections"
         accept="image/jpeg,image/png,image/webp"
         buttonLabel="Загрузить фото"
         pendingLabel="Загружаем фото..."
       />,
     );
 
-    const form = container.querySelector("form");
     const input = container.querySelector('input[type="file"]');
 
-    if (!form || !input) {
-      throw new Error("Upload form markup not found");
+    if (!input) {
+      throw new Error("Upload input markup not found");
     }
 
-    const requestSubmit = vi.fn();
-    Object.defineProperty(form, "requestSubmit", {
-      value: requestSubmit,
-      configurable: true,
-    });
     Object.defineProperty(input, "files", {
       value: [],
       configurable: true,
@@ -96,6 +168,6 @@ describe("DashboardFileUploadForm", () => {
 
     fireEvent.change(input);
 
-    expect(requestSubmit).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

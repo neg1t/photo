@@ -1,21 +1,25 @@
 import sharp from "sharp";
 
-import { AppError } from "@/lib/errors";
 import { env } from "@/lib/env";
+import { AppError } from "@/lib/errors";
 import { isSupportedImageMimeType } from "@/lib/storage/object-keys";
 
-export async function processImageFile(file: File) {
-  if (!isSupportedImageMimeType(file.type)) {
+type ProcessImageInput = {
+  buffer: Buffer;
+  fileName: string;
+  mimeType: string;
+};
+
+export async function processImageBuffer(input: ProcessImageInput) {
+  if (!isSupportedImageMimeType(input.mimeType)) {
     throw new AppError("Поддерживаются только JPG, PNG и WebP.", 400);
   }
 
-  const buffer = Buffer.from(await file.arrayBuffer());
-
-  if (BigInt(buffer.byteLength) > env.product.maxFileSizeBytes) {
+  if (BigInt(input.buffer.byteLength) > env.product.maxFileSizeBytes) {
     throw new AppError("Файл превышает допустимый размер.", 400);
   }
 
-  const image = sharp(buffer, {
+  const image = sharp(input.buffer, {
     failOn: "error",
   });
   const metadata = await image.metadata();
@@ -36,12 +40,20 @@ export async function processImageFile(file: File) {
     .toBuffer();
 
   return {
-    originalBuffer: buffer,
+    originalBuffer: input.buffer,
     previewBuffer,
-    originalSizeBytes: BigInt(buffer.byteLength),
+    originalSizeBytes: BigInt(input.buffer.byteLength),
     width: metadata.width,
     height: metadata.height,
-    originalName: file.name,
-    mimeType: file.type,
+    originalName: input.fileName,
+    mimeType: input.mimeType,
   };
+}
+
+export async function processImageFile(file: File) {
+  return processImageBuffer({
+    buffer: Buffer.from(await file.arrayBuffer()),
+    fileName: file.name,
+    mimeType: file.type,
+  });
 }

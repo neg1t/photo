@@ -41,8 +41,8 @@ export default async function PortfolioPage({
             JPG, PNG и WebP. После выбора файлов загрузка начнется сразу.
           </p>
           <DashboardFileUploadForm
-            action="/dashboard/portfolio/upload"
-            inputName="portfolio"
+            endpoint="/dashboard/portfolio/upload"
+            resultPath="/dashboard/portfolio"
             accept="image/jpeg,image/png,image/webp"
             buttonLabel="Добавить в портфолио"
             pendingLabel="Загружаем портфолио..."

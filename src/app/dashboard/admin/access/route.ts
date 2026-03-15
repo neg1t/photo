@@ -1,7 +1,6 @@
-import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { createRedirectPath } from "@/lib/http";
+import { createSeeOtherRedirectResponse } from "@/lib/http";
 import { requireRouteUser } from "@/lib/route-user";
 import { updateUserAccessStatus } from "@/lib/services/access-service";
 
@@ -25,25 +24,14 @@ export async function POST(request: Request) {
       accessStatus: parsed.accessStatus,
     });
 
-    return NextResponse.redirect(
-      new URL(
-        createRedirectPath("/dashboard/admin", {
-          success: "Статус доступа обновлен.",
-        }),
-        request.url,
-      ),
-    );
+    return createSeeOtherRedirectResponse(request, "/dashboard/admin", {
+      success: "Статус доступа обновлен.",
+    });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Не удалось обновить доступ.";
+    const message = error instanceof Error ? error.message : "Не удалось обновить доступ.";
 
-    return NextResponse.redirect(
-      new URL(
-        createRedirectPath("/dashboard/admin", {
-          error: message,
-        }),
-        request.url,
-      ),
-    );
+    return createSeeOtherRedirectResponse(request, "/dashboard/admin", {
+      error: message,
+    });
   }
 }

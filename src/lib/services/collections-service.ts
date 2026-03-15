@@ -2,21 +2,28 @@ import { addDays, addHours } from "date-fns";
 import { randomBytes, randomUUID } from "node:crypto";
 import { z } from "zod";
 
+import { canManageProtectedContent } from "@/lib/core/access";
 import {
   getCollectionPublicState,
   publishCollection as publishCollectionState,
 } from "@/lib/core/collections";
 import { ensureStorageQuota } from "@/lib/core/quota";
-import { canManageProtectedContent } from "@/lib/core/access";
 import { prisma } from "@/lib/db";
-import { AppError } from "@/lib/errors";
 import { env } from "@/lib/env";
-import { processImageFile } from "@/lib/media";
+import { AppError } from "@/lib/errors";
+import { processImageBuffer } from "@/lib/media";
 import {
   buildCollectionArchiveKey,
   buildCollectionPhotoKeys,
+  isSupportedImageMimeType,
 } from "@/lib/storage/object-keys";
-import { deleteStorageObjects, getStorageObject, putStorageObject } from "@/lib/storage/s3";
+import {
+  createSignedUploadUrl,
+  deleteStorageObjects,
+  getStorageObject,
+  putStorageObject,
+} from "@/lib/storage/s3";
+import type { PreparedUpload, PreparedUploadToken, UploadFileInput } from "@/lib/uploads";
 import { createZipArchive } from "@/lib/zip";
 
 const createCollectionSchema = z.object({
@@ -46,6 +53,24 @@ function resolveExpirationDate(expiresAt?: string) {
   return parsed;
 }
 
+function validateRequestedImageUpload(input: {
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+}) {
+  if (!isSupportedImageMimeType(input.mimeType)) {
+    throw new AppError("Поддерживаются только JPG, PNG и WebP.", 400);
+  }
+
+  if (BigInt(input.sizeBytes) > env.product.maxFileSizeBytes) {
+    throw new AppError("Файл превышает допустимый размер.", 400);
+  }
+}
+
+function normalizeMimeType(contentType: string) {
+  return contentType.split(";")[0]?.trim().toLowerCase() || "application/octet-stream";
+}
+
 async function requireContentOwner(userId: string) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -71,6 +96,25 @@ async function requireContentOwner(userId: string) {
   return user;
 }
 
+async function requireOwnedCollection(userId: string, collectionId: string) {
+  const collection = await prisma.collection.findFirst({
+    where: {
+      id: collectionId,
+      userId,
+    },
+  });
+
+  if (!collection) {
+    throw new AppError("Коллекция не найдена.", 404);
+  }
+
+  if (collection.storageDeletedAt) {
+    throw new AppError("Коллекция уже очищена и недоступна для загрузки.", 400);
+  }
+
+  return collection;
+}
+
 export async function createCollectionForUser(
   userId: string,
   input: z.input<typeof createCollectionSchema>,
@@ -88,32 +132,84 @@ export async function createCollectionForUser(
   });
 }
 
-export async function uploadPhotosToCollection(input: {
+export async function prepareCollectionPhotoUploads(input: {
   userId: string;
   collectionId: string;
-  files: File[];
+  files: UploadFileInput[];
 }) {
   if (!input.files.length) {
     throw new AppError("Выберите хотя бы один файл для загрузки.", 400);
   }
 
   const user = await requireContentOwner(input.userId);
-  const collection = await prisma.collection.findFirst({
-    where: {
-      id: input.collectionId,
+  await requireOwnedCollection(input.userId, input.collectionId);
+
+  let projectedUsage = user.storageUsedBytes;
+  const preparedUploads: PreparedUpload[] = [];
+
+  for (const file of input.files) {
+    validateRequestedImageUpload({
+      fileName: file.name,
+      mimeType: file.type,
+      sizeBytes: file.size,
+    });
+
+    const quota = ensureStorageQuota({
+      currentUsageBytes: projectedUsage,
+      incomingBytes: BigInt(file.size),
+      limitBytes: user.storageLimitBytes,
+    });
+
+    if (!quota.allowed) {
+      throw new AppError("Лимит хранилища будет превышен.", 400);
+    }
+
+    const uploadId = randomUUID();
+    const keys = buildCollectionPhotoKeys({
       userId: input.userId,
-    },
-  });
+      collectionId: input.collectionId,
+      objectId: uploadId,
+      fileName: file.name,
+    });
 
-  if (!collection) {
-    throw new AppError("Коллекция не найдена.", 404);
+    preparedUploads.push({
+      uploadId,
+      fileName: file.name,
+      mimeType: file.type,
+      sizeBytes: file.size,
+      uploadUrl: await createSignedUploadUrl({
+        key: keys.originalKey,
+        contentType: file.type,
+      }),
+    });
+
+    projectedUsage += BigInt(file.size);
   }
 
-  if (collection.storageDeletedAt) {
-    throw new AppError("Коллекция уже очищена и недоступна для загрузки.", 400);
+  return preparedUploads;
+}
+
+export async function completeCollectionPhotoUploads(input: {
+  userId: string;
+  collectionId: string;
+  uploads: PreparedUploadToken[];
+}) {
+  if (!input.uploads.length) {
+    throw new AppError("Выберите хотя бы один файл для загрузки.", 400);
   }
 
-  const uploadedKeys: string[] = [];
+  const user = await requireContentOwner(input.userId);
+  await requireOwnedCollection(input.userId, input.collectionId);
+
+  const previewKeysToCleanup: string[] = [];
+  const originalKeysToCleanup = input.uploads.map((upload) =>
+    buildCollectionPhotoKeys({
+      userId: input.userId,
+      collectionId: input.collectionId,
+      objectId: upload.uploadId,
+      fileName: upload.fileName,
+    }).originalKey,
+  );
   const preparedPhotos: Array<{
     id: string;
     storageKey: string;
@@ -128,8 +224,25 @@ export async function uploadPhotosToCollection(input: {
   let totalOriginalBytes = 0n;
 
   try {
-    for (const file of input.files) {
-      const image = await processImageFile(file);
+    for (const upload of input.uploads) {
+      validateRequestedImageUpload({
+        fileName: upload.fileName,
+        mimeType: upload.mimeType,
+        sizeBytes: upload.sizeBytes,
+      });
+
+      const keys = buildCollectionPhotoKeys({
+        userId: input.userId,
+        collectionId: input.collectionId,
+        objectId: upload.uploadId,
+        fileName: upload.fileName,
+      });
+      const storedObject = await getStorageObject(keys.originalKey);
+      const image = await processImageBuffer({
+        buffer: Buffer.from(storedObject.bytes),
+        fileName: upload.fileName,
+        mimeType: normalizeMimeType(storedObject.contentType),
+      });
       const quota = ensureStorageQuota({
         currentUsageBytes: projectedUsage,
         incomingBytes: image.originalSizeBytes,
@@ -140,30 +253,16 @@ export async function uploadPhotosToCollection(input: {
         throw new AppError("Лимит хранилища будет превышен.", 400);
       }
 
-      const objectId = randomUUID();
-      const keys = buildCollectionPhotoKeys({
-        userId: input.userId,
-        collectionId: input.collectionId,
-        objectId,
-        fileName: image.originalName,
-      });
-
-      await putStorageObject({
-        key: keys.originalKey,
-        body: image.originalBuffer,
-        contentType: image.mimeType,
-      });
-      uploadedKeys.push(keys.originalKey);
       await putStorageObject({
         key: keys.previewKey,
         body: image.previewBuffer,
         contentType: "image/webp",
         cacheControl: "public, max-age=31536000, immutable",
       });
-      uploadedKeys.push(keys.previewKey);
+      previewKeysToCleanup.push(keys.previewKey);
 
       preparedPhotos.push({
-        id: objectId,
+        id: upload.uploadId,
         storageKey: keys.originalKey,
         previewKey: keys.previewKey,
         originalName: image.originalName,
@@ -211,23 +310,14 @@ export async function uploadPhotosToCollection(input: {
 
     return preparedPhotos.length;
   } catch (error) {
-    await deleteStorageObjects(uploadedKeys);
+    await deleteStorageObjects([...originalKeysToCleanup, ...previewKeysToCleanup]);
     throw error;
   }
 }
 
 export async function publishCollectionForUser(userId: string, collectionId: string) {
   await requireContentOwner(userId);
-  const collection = await prisma.collection.findFirst({
-    where: {
-      id: collectionId,
-      userId,
-    },
-  });
-
-  if (!collection) {
-    throw new AppError("Коллекция не найдена.", 404);
-  }
+  const collection = await requireOwnedCollection(userId, collectionId);
 
   if (collection.expiresAt <= new Date()) {
     throw new AppError("Нельзя публиковать коллекцию с истекшим сроком хранения.", 400);
@@ -340,8 +430,13 @@ export async function getOrCreateArchiveForCollection(shareToken: string) {
   const existingArchive = await prisma.collectionArchive.findUnique({
     where: { collectionId: collection.id },
   });
+  const now = new Date();
 
-  if (existingArchive && existingArchive.expiresAt > new Date()) {
+  if (
+    existingArchive &&
+    existingArchive.expiresAt > now &&
+    existingArchive.updatedAt >= collection.updatedAt
+  ) {
     return {
       storageKey: existingArchive.storageKey,
       fileName: `${collection.title}.zip`,
@@ -363,7 +458,7 @@ export async function getOrCreateArchiveForCollection(shareToken: string) {
     userId: collection.userId,
     collectionId: collection.id,
   });
-  const archiveExpiresAt = addHours(new Date(), env.product.zipTtlHours);
+  const archiveExpiresAt = addHours(now, env.product.zipTtlHours);
 
   await putStorageObject({
     key: archiveKey,

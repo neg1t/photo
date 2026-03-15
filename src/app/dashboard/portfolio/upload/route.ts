@@ -1,41 +1,60 @@
 import { NextResponse } from "next/server";
+import { ZodError } from "zod";
 
+import { AppError } from "@/lib/errors";
 import { createRedirectPath } from "@/lib/http";
 import { requireRouteUser } from "@/lib/route-user";
-import { uploadPortfolioAssets } from "@/lib/services/portfolio-service";
+import {
+  completePortfolioAssetUploads,
+  preparePortfolioAssetUploads,
+} from "@/lib/services/portfolio-service";
+import { uploadRoutePayloadSchema } from "@/lib/uploads";
+
+function createJsonErrorResponse(message: string, status = 400) {
+  return NextResponse.json(
+    {
+      error: message,
+      redirectTo: createRedirectPath("/dashboard/portfolio", {
+        error: message,
+      }),
+    },
+    { status },
+  );
+}
 
 export async function POST(request: Request) {
   try {
     const user = await requireRouteUser();
-    const formData = await request.formData();
-    const files = formData
-      .getAll("portfolio")
-      .filter((file): file is File => file instanceof File && file.size > 0);
+    const payload = uploadRoutePayloadSchema.parse(await request.json());
 
-    await uploadPortfolioAssets({
+    if (payload.intent === "prepare") {
+      const uploads = await preparePortfolioAssetUploads({
+        userId: user.id,
+        files: payload.files,
+      });
+
+      return NextResponse.json({ uploads });
+    }
+
+    await completePortfolioAssetUploads({
       userId: user.id,
-      files,
+      uploads: payload.uploads,
     });
 
-    return NextResponse.redirect(
-      new URL(
-        createRedirectPath("/dashboard/portfolio", {
-          success: "Работы добавлены в портфолио.",
-        }),
-        request.url,
-      ),
-    );
+    return NextResponse.json({
+      redirectTo: createRedirectPath("/dashboard/portfolio", {
+        success: "Работы добавлены в портфолио.",
+      }),
+    });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Не удалось загрузить портфолио.";
+    if (error instanceof ZodError) {
+      return createJsonErrorResponse("Некорректный запрос на загрузку.");
+    }
 
-    return NextResponse.redirect(
-      new URL(
-        createRedirectPath("/dashboard/portfolio", {
-          error: message,
-        }),
-        request.url,
-      ),
-    );
+    if (error instanceof AppError) {
+      return createJsonErrorResponse(error.message, error.status);
+    }
+
+    return createJsonErrorResponse("Не удалось загрузить портфолио.", 500);
   }
 }

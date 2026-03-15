@@ -1,6 +1,4 @@
-import { NextResponse } from "next/server";
-
-import { createRedirectPath } from "@/lib/http";
+import { createSeeOtherRedirectResponse } from "@/lib/http";
 import { requireRouteUser } from "@/lib/route-user";
 import { deletePortfolioAsset } from "@/lib/services/portfolio-service";
 
@@ -15,25 +13,14 @@ export async function POST(request: Request, { params }: RouteProps) {
 
     await deletePortfolioAsset(user.id, assetId);
 
-    return NextResponse.redirect(
-      new URL(
-        createRedirectPath("/dashboard/portfolio", {
-          success: "Работа удалена из портфолио.",
-        }),
-        request.url,
-      ),
-    );
+    return createSeeOtherRedirectResponse(request, "/dashboard/portfolio", {
+      success: "Работа удалена из портфолио.",
+    });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Не удалось удалить работу.";
+    const message = error instanceof Error ? error.message : "Не удалось удалить работу.";
 
-    return NextResponse.redirect(
-      new URL(
-        createRedirectPath("/dashboard/portfolio", {
-          error: message,
-        }),
-        request.url,
-      ),
-    );
+    return createSeeOtherRedirectResponse(request, "/dashboard/portfolio", {
+      error: message,
+    });
   }
 }
