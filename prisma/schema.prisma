@@ -1,0 +1,136 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AccessStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+}
+
+enum CollectionStatus {
+  DRAFT
+  PUBLISHED
+  EXPIRED
+  DELETED
+}
+
+enum PriceType {
+  PER_SERVICE
+  PER_HOUR
+}
+
+model User {
+  id                String               @id @default(cuid())
+  email             String               @unique
+  googleId          String?              @unique
+  accessStatus      AccessStatus         @default(PENDING)
+  storageLimitBytes BigInt               @default(53687091200)
+  storageUsedBytes  BigInt               @default(0)
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  profile           PhotographerProfile?
+  collections       Collection[]
+  portfolioAssets   PortfolioAsset[]
+  services          Service[]
+  plans             SubscriptionPlan[]
+}
+
+model PhotographerProfile {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  firstName   String   @default("")
+  lastName    String   @default("")
+  username    String   @unique
+  telegramUrl String?
+  avatarUrl   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Collection {
+  id               String           @id @default(cuid())
+  userId           String
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title            String
+  status           CollectionStatus @default(DRAFT)
+  shareToken       String?          @unique
+  expiresAt        DateTime
+  publishedAt      DateTime?
+  totalSizeBytes   BigInt           @default(0)
+  storageDeletedAt DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  photos           Photo[]
+  archive          CollectionArchive?
+}
+
+model Photo {
+  id           String     @id @default(cuid())
+  collectionId String
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  storageKey   String
+  previewKey   String
+  originalName String
+  mimeType     String
+  sizeBytes    BigInt
+  width        Int
+  height       Int
+  createdAt    DateTime   @default(now())
+}
+
+model PortfolioAsset {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  storageKey   String
+  previewKey   String
+  originalName String
+  mimeType     String
+  sizeBytes    BigInt
+  width        Int
+  height       Int
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Service {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  price     Decimal   @db.Decimal(10, 2)
+  priceType PriceType
+  sortOrder Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model SubscriptionPlan {
+  id                   String @id @default(cuid())
+  userId               String
+  user                 User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name                 String
+  storageLimitBytes    BigInt
+  retentionDaysDefault Int
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
+
+model CollectionArchive {
+  id           String     @id @default(cuid())
+  collectionId String     @unique
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  storageKey   String
+  sizeBytes    BigInt
+  expiresAt    DateTime
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
