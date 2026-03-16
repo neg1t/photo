@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   prismaMock,
@@ -39,6 +39,8 @@ import { getOrCreateArchiveForCollection } from "@/lib/services/collections-serv
 
 describe("getOrCreateArchiveForCollection", () => {
   beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-15T10:30:00.000Z"));
     vi.clearAllMocks();
     getStorageObjectMock.mockResolvedValue({
       bytes: Uint8Array.from([1, 2, 3]),
@@ -47,6 +49,10 @@ describe("getOrCreateArchiveForCollection", () => {
     });
     putStorageObjectMock.mockResolvedValue(undefined);
     createZipArchiveMock.mockResolvedValue(Buffer.from("zip"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("reuses a fresh archive when the collection has not changed since it was created", async () => {
