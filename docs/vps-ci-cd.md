@@ -237,7 +237,47 @@ docker login ghcr.io
 - username = GitHub username
 - password = созданный token
 
-## 12. Настроить GitHub Secrets
+## 12. Включить GitHub Actions и права workflow
+
+До добавления секретов проверь, что Actions вообще включены в репозитории.
+
+В репозитории открой:
+
+- `Settings`
+- `Actions`
+- `General`
+
+Проверь следующие настройки:
+
+- `Actions permissions`:
+  - выбрано `Allow all actions and reusable workflows`
+- `Workflow permissions`:
+  - выбрано `Read and write permissions`
+
+Если в репозитории Actions еще ни разу не запускались, также открой:
+
+- вкладку `Actions`
+
+И убедись, что там нет кнопки вроде:
+
+- `I understand my workflows, go ahead and enable them`
+- `Enable workflows`
+
+Если такая кнопка есть, ее нужно нажать, иначе `push` в `main` ничего не запустит.
+
+Проверка после `push`:
+
+1. Открой вкладку `Actions`
+2. Слева выбери workflow `Deploy`
+3. У тебя должен появиться новый run на свежем коммите из `main`
+
+Если run нет вообще, ищи проблему в одном из этих мест:
+
+- Actions выключены в репозитории
+- workflow не попал в ветку `main`
+- `push` был не в `main`
+
+## 13. Настроить GitHub Secrets
 
 В репозитории открой:
 
@@ -259,7 +299,7 @@ docker login ghcr.io
 - `VPS_USER` = `deploy`
 - `VPS_SSH_KEY` = приватный SSH key, который соответствует публичному ключу в `/home/deploy/.ssh/authorized_keys`
 
-## 13. Что уже делает workflow
+## 14. Что уже делает workflow
 
 Workflow лежит в [`.github/workflows/deploy.yml`](/D:/src/vibe/.github/workflows/deploy.yml).
 
@@ -279,7 +319,7 @@ Workflow лежит в [`.github/workflows/deploy.yml`](/D:/src/vibe/.github/wor
 12. синхронизирует deploy-файлы на VPS
 13. на VPS выполняет deploy script
 
-## 14. Что делает deploy script на VPS
+## 15. Что делает deploy script на VPS
 
 Скрипт [`scripts/deploy/deploy.sh`](/D:/src/vibe/scripts/deploy/deploy.sh):
 
@@ -289,7 +329,7 @@ Workflow лежит в [`.github/workflows/deploy.yml`](/D:/src/vibe/.github/wor
 4. запускает `docker compose up -d --remove-orphans`
 5. чистит старые Docker images
 
-## 15. Первый production deploy
+## 16. Первый production deploy
 
 Когда DNS, Nginx, env, GHCR и GitHub secrets уже готовы:
 
@@ -298,7 +338,7 @@ Workflow лежит в [`.github/workflows/deploy.yml`](/D:/src/vibe/.github/wor
 3. Открой GitHub Actions
 4. Дождись успешного workflow `Deploy`
 
-## 16. Проверка после первого деплоя
+## 17. Проверка после первого деплоя
 
 Проверь:
 
@@ -317,7 +357,7 @@ curl https://photo.neg1t.ru/api/health
 - скачивание ZIP
 - загрузку в портфолио
 
-## 17. Настроить ежедневный cleanup
+## 18. Настроить ежедневный cleanup
 
 Под пользователем `deploy` выполни:
 
@@ -337,7 +377,7 @@ crontab -e
 crontab -l
 ```
 
-## 18. Что делать при обновлениях
+## 19. Что делать при обновлениях
 
 Обычный сценарий:
 
@@ -352,7 +392,7 @@ cd /opt/photo/current
 IMAGE_NAME=ghcr.io/neg1t/photo IMAGE_TAG=latest ./scripts/deploy/deploy.sh
 ```
 
-## 19. Что делать при новом проекте на этом же домене
+## 20. Что делать при новом проекте на этом же домене
 
 Для другого проекта создаешь новый поддомен:
 
@@ -367,7 +407,7 @@ IMAGE_NAME=ghcr.io/neg1t/photo IMAGE_TAG=latest ./scripts/deploy/deploy.sh
 
 Основной домен `neg1t.ru` при этом не страдает и может вообще использоваться отдельно.
 
-## 20. Типовые проблемы
+## 21. Типовые проблемы
 
 ### Workflow падает на SSH
 
