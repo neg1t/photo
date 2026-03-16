@@ -17,7 +17,6 @@ const envSchema = z.object({
   S3_PUBLIC_BASE_URL: z.string().url().default("http://localhost:9000/vibe"),
   DEFAULT_STORAGE_LIMIT_BYTES: z.coerce.bigint().default(53_687_091_200n),
   DEFAULT_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
-  MAX_FILE_SIZE_BYTES: z.coerce.bigint().default(26_214_400n),
   ZIP_TTL_HOURS: z.coerce.number().int().positive().default(2),
   CLEANUP_CRON_SECRET: z.string().default("dev-cleanup-secret"),
   ADMIN_EMAILS: z.string().default(""),
@@ -50,7 +49,6 @@ export const env = {
   product: {
     defaultStorageLimitBytes: parsedEnv.DEFAULT_STORAGE_LIMIT_BYTES,
     defaultRetentionDays: parsedEnv.DEFAULT_RETENTION_DAYS,
-    maxFileSizeBytes: parsedEnv.MAX_FILE_SIZE_BYTES,
     zipTtlHours: parsedEnv.ZIP_TTL_HOURS,
   },
   cleanup: {

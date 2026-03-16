@@ -3,37 +3,37 @@ import { randomUUID } from "node:crypto";
 import { canManageProtectedContent } from "@/lib/core/access";
 import { ensureStorageQuota } from "@/lib/core/quota";
 import { prisma } from "@/lib/db";
-import { env } from "@/lib/env";
 import { AppError } from "@/lib/errors";
-import { processImageBuffer } from "@/lib/media";
 import {
-  buildPortfolioAssetKeys,
-  isSupportedImageMimeType,
-} from "@/lib/storage/object-keys";
+  getPreferredUploadContentType,
+  isAcceptedPhotoUpload,
+} from "@/lib/media-upload";
+import { buildPortfolioAssetKeys } from "@/lib/storage/object-keys";
 import {
   createSignedUploadUrl,
   deleteStorageObjects,
-  getStorageObject,
-  putStorageObject,
+  headStorageObject,
 } from "@/lib/storage/s3";
-import type { PreparedUpload, PreparedUploadToken, UploadFileInput } from "@/lib/uploads";
+import type {
+  PreparedUpload,
+  PreparedUploadToken,
+  UploadFileInput,
+} from "@/lib/uploads";
 
 function validateRequestedImageUpload(input: {
   fileName: string;
   mimeType: string;
-  sizeBytes: number;
 }) {
-  if (!isSupportedImageMimeType(input.mimeType)) {
-    throw new AppError("Поддерживаются только JPG, PNG и WebP.", 400);
-  }
-
-  if (BigInt(input.sizeBytes) > env.product.maxFileSizeBytes) {
-    throw new AppError("Файл превышает допустимый размер.", 400);
+  if (!isAcceptedPhotoUpload(input)) {
+    throw new AppError(
+      "Поддерживаются только фотографии и исходники камер. SVG и другие не-фото форматы загружать нельзя.",
+      400,
+    );
   }
 }
 
-function normalizeMimeType(contentType: string) {
-  return contentType.split(";")[0]?.trim().toLowerCase() || "application/octet-stream";
+function normalizeMimeType(contentType?: string) {
+  return contentType?.split(";")[0]?.trim().toLowerCase() || "application/octet-stream";
 }
 
 async function requirePortfolioOwner(userId: string) {
@@ -71,10 +71,11 @@ export async function preparePortfolioAssetUploads(input: {
   const preparedUploads: PreparedUpload[] = [];
 
   for (const file of input.files) {
+    const uploadMimeType = getPreferredUploadContentType(file.type);
+
     validateRequestedImageUpload({
       fileName: file.name,
       mimeType: file.type,
-      sizeBytes: file.size,
     });
 
     const quota = ensureStorageQuota({
@@ -97,11 +98,11 @@ export async function preparePortfolioAssetUploads(input: {
     preparedUploads.push({
       uploadId,
       fileName: file.name,
-      mimeType: file.type,
+      mimeType: uploadMimeType,
       sizeBytes: file.size,
       uploadUrl: await createSignedUploadUrl({
         key: keys.originalKey,
-        contentType: file.type,
+        contentType: uploadMimeType,
       }),
     });
 
@@ -121,9 +122,13 @@ export async function completePortfolioAssetUploads(input: {
 
   const user = await requirePortfolioOwner(input.userId);
   const currentCount = await prisma.portfolioAsset.count({
-    where: { userId: input.userId },
+    where: {
+      userId: input.userId,
+      processingStatus: {
+        not: "FAILED",
+      },
+    },
   });
-  const previewKeysToCleanup: string[] = [];
   const originalKeysToCleanup = input.uploads.map((upload) =>
     buildPortfolioAssetKeys({
       userId: input.userId,
@@ -134,12 +139,12 @@ export async function completePortfolioAssetUploads(input: {
   const preparedAssets: Array<{
     id: string;
     storageKey: string;
-    previewKey: string;
+    previewKey: string | null;
     originalName: string;
     mimeType: string;
     sizeBytes: bigint;
-    width: number;
-    height: number;
+    width: number | null;
+    height: number | null;
     sortOrder: number;
   }> = [];
   let projectedUsage = user.storageUsedBytes;
@@ -150,7 +155,6 @@ export async function completePortfolioAssetUploads(input: {
       validateRequestedImageUpload({
         fileName: upload.fileName,
         mimeType: upload.mimeType,
-        sizeBytes: upload.sizeBytes,
       });
 
       const keys = buildPortfolioAssetKeys({
@@ -158,15 +162,12 @@ export async function completePortfolioAssetUploads(input: {
         objectId: upload.uploadId,
         fileName: upload.fileName,
       });
-      const storedObject = await getStorageObject(keys.originalKey);
-      const image = await processImageBuffer({
-        buffer: Buffer.from(storedObject.bytes),
-        fileName: upload.fileName,
-        mimeType: normalizeMimeType(storedObject.contentType),
-      });
+      const storedObject = await headStorageObject(keys.originalKey);
+      const originalSizeBytes = BigInt(storedObject.contentLength ?? upload.sizeBytes);
+      const mimeType = normalizeMimeType(storedObject.contentType || upload.mimeType);
       const quota = ensureStorageQuota({
         currentUsageBytes: projectedUsage,
-        incomingBytes: image.originalSizeBytes,
+        incomingBytes: originalSizeBytes,
         limitBytes: user.storageLimitBytes,
       });
 
@@ -174,28 +175,20 @@ export async function completePortfolioAssetUploads(input: {
         throw new AppError("Лимит хранилища будет превышен.", 400);
       }
 
-      await putStorageObject({
-        key: keys.previewKey,
-        body: image.previewBuffer,
-        contentType: "image/webp",
-        cacheControl: "public, max-age=31536000, immutable",
-      });
-      previewKeysToCleanup.push(keys.previewKey);
-
       preparedAssets.push({
         id: upload.uploadId,
         storageKey: keys.originalKey,
-        previewKey: keys.previewKey,
-        originalName: image.originalName,
-        mimeType: image.mimeType,
-        sizeBytes: image.originalSizeBytes,
-        width: image.width,
-        height: image.height,
+        previewKey: null,
+        originalName: upload.fileName,
+        mimeType,
+        sizeBytes: originalSizeBytes,
+        width: null,
+        height: null,
         sortOrder: currentCount + index,
       });
 
-      projectedUsage += image.originalSizeBytes;
-      totalOriginalBytes += image.originalSizeBytes;
+      projectedUsage += originalSizeBytes;
+      totalOriginalBytes += originalSizeBytes;
     }
 
     await prisma.$transaction([
@@ -211,6 +204,7 @@ export async function completePortfolioAssetUploads(input: {
           width: asset.width,
           height: asset.height,
           sortOrder: asset.sortOrder,
+          processingStatus: "PENDING",
         })),
       }),
       prisma.user.update({
@@ -225,7 +219,7 @@ export async function completePortfolioAssetUploads(input: {
 
     return preparedAssets.length;
   } catch (error) {
-    await deleteStorageObjects([...originalKeysToCleanup, ...previewKeysToCleanup]);
+    await deleteStorageObjects(originalKeysToCleanup);
     throw error;
   }
 }
@@ -242,7 +236,7 @@ export async function deletePortfolioAsset(userId: string, assetId: string) {
     throw new AppError("Работа из портфолио не найдена.", 404);
   }
 
-  await deleteStorageObjects([asset.storageKey, asset.previewKey]);
+  await deleteStorageObjects([asset.storageKey, asset.previewKey ?? ""]);
   await prisma.$transaction([
     prisma.portfolioAsset.delete({
       where: { id: asset.id },

@@ -1,53 +1,57 @@
-# Vibe Photo Delivery MVP
+# Photo Delivery MVP
 
-Next.js MVP для фотографа: загрузка коллекций, публичные ссылки для клиентов, портфолио, услуги, квоты хранения и автоочистка.
+Self-hosted `Next.js` сервис для фотографа: клиентские коллекции, публичные галереи, портфолио, услуги, S3-хранилище оригиналов, фоновая генерация preview и ежедневная очистка.
 
-## Stack
+## Быстрые ссылки
 
-- Next.js App Router + TypeScript
-- Prisma + PostgreSQL
-- Auth.js / NextAuth with Google OAuth
-- S3-compatible storage via MinIO/S3 adapter
-- Tailwind CSS + lightweight shadcn-style UI primitives
-- Vitest for domain/service tests
+- Локальный тест с `Neon + SelCloud S3`: [docs/local-testing.md](/D:/src/vibe/docs/local-testing.md)
+- Production и CI/CD на VPS: [docs/vps-ci-cd.md](/D:/src/vibe/docs/vps-ci-cd.md)
+- Локальный env-шаблон: [.env.example](/D:/src/vibe/.env.example)
+- Production env-шаблон: [.env.production.example](/D:/src/vibe/.env.production.example)
+- GitHub Actions deploy workflow: [.github/workflows/deploy.yml](/D:/src/vibe/.github/workflows/deploy.yml)
+- Production compose: [docker-compose.prod.yml](/D:/src/vibe/docker-compose.prod.yml)
+- Nginx конфиг: [deploy/nginx/photo.conf](/D:/src/vibe/deploy/nginx/photo.conf)
 
-## Local Setup
+## Текущая архитектура
 
-1. Скопировать пример окружения:
+- `browser -> S3` для загрузки оригиналов
+- `app` сохраняет записи медиа в БД
+- `worker` асинхронно строит preview
+- `nginx` и `certbot` работают на VPS-хосте
+- деплой идет через `GitHub Actions -> GHCR -> VPS`
 
-```bash
-cp .env.example .env
-```
+## Статусы медиа
 
-2. Поднять локальные сервисы:
+- `PENDING` — оригинал загружен, preview еще не готово
+- `PROCESSING` — worker обрабатывает файл
+- `READY` — preview построено
+- `ORIGINAL_ONLY` — оригинал сохранен, но browser preview недоступно
+- `FAILED` — файл исключен из пользовательского сценария
 
-```bash
-pnpm db:up
-```
-
-3. Применить миграции и сгенерировать Prisma client:
-
-```bash
-pnpm prisma:migrate --name init
-pnpm prisma:generate
-```
-
-4. Запустить приложение:
+## Основные команды
 
 ```bash
+pnpm install
+pnpm exec prisma generate
+pnpm exec prisma migrate deploy
 pnpm dev
-```
-
-## Important Notes
-
-- Локальный PostgreSQL контейнера использует порт `5433`, потому что на этой машине уже занят `5432`.
-- Пока не заданы `GOOGLE_CLIENT_ID` и `GOOGLE_CLIENT_SECRET`, экран логина показывает ожидаемое сообщение о неготовой OAuth-конфигурации.
-- Cleanup cron вызывается через `POST /api/internal/cleanup` с заголовком `x-cron-secret`.
-
-## Verification
-
-```bash
+pnpm worker
+pnpm cleanup
 pnpm exec vitest run
 pnpm lint
 pnpm build
 ```
+
+## Helper scripts для VPS
+
+- Базовая подготовка VPS: [scripts/deploy/bootstrap-vps.sh](/D:/src/vibe/scripts/deploy/bootstrap-vps.sh)
+- Применение миграций: [scripts/deploy/run-migrations.sh](/D:/src/vibe/scripts/deploy/run-migrations.sh)
+- Production deploy: [scripts/deploy/deploy.sh](/D:/src/vibe/scripts/deploy/deploy.sh)
+- Установка cleanup cron: [scripts/deploy/install-cleanup-cron.sh](/D:/src/vibe/scripts/deploy/install-cleanup-cron.sh)
+
+## Что важно помнить
+
+- Для локального теста домен не нужен, достаточно `http://localhost:3000`
+- Для локального теста нужно запускать и `app`, и `worker`
+- Для production shared hosting не нужен, используется твоя VPS
+- DNS production-домена по текущей схеме остается у регистратора

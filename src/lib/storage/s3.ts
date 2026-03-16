@@ -2,11 +2,14 @@ import {
   CreateBucketCommand,
   DeleteObjectsCommand,
   GetObjectCommand,
+  HeadObjectCommand,
   HeadBucketCommand,
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { createWriteStream } from "node:fs";
+import { finished } from "node:stream/promises";
 
 import { env } from "@/lib/env";
 
@@ -108,8 +111,53 @@ export async function getStorageObject(key: string) {
   };
 }
 
+export async function headStorageObject(key: string) {
+  await ensureBucketExists();
+
+  const response = await s3Client.send(
+    new HeadObjectCommand({
+      Bucket: env.storage.bucket,
+      Key: key,
+    }),
+  );
+
+  return {
+    contentType: response.ContentType ?? "application/octet-stream",
+    contentLength: response.ContentLength ?? 0,
+  };
+}
+
+export async function downloadStorageObjectToFile(key: string, filePath: string) {
+  await ensureBucketExists();
+
+  const response = await s3Client.send(
+    new GetObjectCommand({
+      Bucket: env.storage.bucket,
+      Key: key,
+    }),
+  );
+
+  if (!response.Body) {
+    throw new Error(`Storage object ${key} has no body`);
+  }
+
+  const stream = response.Body as NodeJS.ReadableStream;
+  const writeStream = createWriteStream(filePath);
+
+  stream.pipe(writeStream);
+  await finished(writeStream);
+
+  return {
+    contentType: response.ContentType ?? "application/octet-stream",
+    contentLength: response.ContentLength ?? 0,
+    filePath,
+  };
+}
+
 export async function deleteStorageObjects(keys: string[]) {
-  if (!keys.length) {
+  const filteredKeys = keys.filter(Boolean);
+
+  if (!filteredKeys.length) {
     return;
   }
 
@@ -118,7 +166,7 @@ export async function deleteStorageObjects(keys: string[]) {
     new DeleteObjectsCommand({
       Bucket: env.storage.bucket,
       Delete: {
-        Objects: keys.map((key) => ({ Key: key })),
+        Objects: filteredKeys.map((key) => ({ Key: key })),
       },
     }),
   );

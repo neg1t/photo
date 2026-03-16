@@ -1,7 +1,7 @@
-import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { MediaTile } from "@/components/media/media-tile";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -48,23 +48,17 @@ export default async function PublicProfilePage({
 
       <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <Card>
-          <h2 className="text-2xl font-semibold tracking-[-0.03em]">
-            Портфолио
-          </h2>
+          <h2 className="text-2xl font-semibold tracking-[-0.03em]">Портфолио</h2>
           <div className="mt-5 grid gap-4 sm:grid-cols-2">
             {profile.user.portfolioAssets.map((asset) => (
-              <div
+              <MediaTile
                 key={asset.id}
-                className="overflow-hidden rounded-[24px] border border-black/8 bg-white"
-              >
-                <Image
-                  src={`/api/public/portfolio/${asset.id}/preview`}
-                  alt={asset.originalName}
-                  width={asset.width}
-                  height={asset.height}
-                  className="aspect-[4/3] h-auto w-full object-cover"
-                />
-              </div>
+                name={asset.originalName}
+                status={asset.processingStatus}
+                previewSrc={`/api/public/portfolio/${asset.id}/preview`}
+                width={asset.width}
+                height={asset.height}
+              />
             ))}
 
             {!profile.user.portfolioAssets.length ? (

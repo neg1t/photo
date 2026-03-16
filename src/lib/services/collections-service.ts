@@ -11,19 +11,26 @@ import { ensureStorageQuota } from "@/lib/core/quota";
 import { prisma } from "@/lib/db";
 import { env } from "@/lib/env";
 import { AppError } from "@/lib/errors";
-import { processImageBuffer } from "@/lib/media";
+import {
+  getPreferredUploadContentType,
+  isAcceptedPhotoUpload,
+} from "@/lib/media-upload";
 import {
   buildCollectionArchiveKey,
   buildCollectionPhotoKeys,
-  isSupportedImageMimeType,
 } from "@/lib/storage/object-keys";
 import {
   createSignedUploadUrl,
   deleteStorageObjects,
   getStorageObject,
+  headStorageObject,
   putStorageObject,
 } from "@/lib/storage/s3";
-import type { PreparedUpload, PreparedUploadToken, UploadFileInput } from "@/lib/uploads";
+import type {
+  PreparedUpload,
+  PreparedUploadToken,
+  UploadFileInput,
+} from "@/lib/uploads";
 import { createZipArchive } from "@/lib/zip";
 
 const createCollectionSchema = z.object({
@@ -56,19 +63,17 @@ function resolveExpirationDate(expiresAt?: string) {
 function validateRequestedImageUpload(input: {
   fileName: string;
   mimeType: string;
-  sizeBytes: number;
 }) {
-  if (!isSupportedImageMimeType(input.mimeType)) {
-    throw new AppError("Поддерживаются только JPG, PNG и WebP.", 400);
-  }
-
-  if (BigInt(input.sizeBytes) > env.product.maxFileSizeBytes) {
-    throw new AppError("Файл превышает допустимый размер.", 400);
+  if (!isAcceptedPhotoUpload(input)) {
+    throw new AppError(
+      "Поддерживаются только фотографии и исходники камер. SVG и другие не-фото форматы загружать нельзя.",
+      400,
+    );
   }
 }
 
-function normalizeMimeType(contentType: string) {
-  return contentType.split(";")[0]?.trim().toLowerCase() || "application/octet-stream";
+function normalizeMimeType(contentType?: string) {
+  return contentType?.split(";")[0]?.trim().toLowerCase() || "application/octet-stream";
 }
 
 async function requireContentOwner(userId: string) {
@@ -148,10 +153,11 @@ export async function prepareCollectionPhotoUploads(input: {
   const preparedUploads: PreparedUpload[] = [];
 
   for (const file of input.files) {
+    const uploadMimeType = getPreferredUploadContentType(file.type);
+
     validateRequestedImageUpload({
       fileName: file.name,
       mimeType: file.type,
-      sizeBytes: file.size,
     });
 
     const quota = ensureStorageQuota({
@@ -175,11 +181,11 @@ export async function prepareCollectionPhotoUploads(input: {
     preparedUploads.push({
       uploadId,
       fileName: file.name,
-      mimeType: file.type,
+      mimeType: uploadMimeType,
       sizeBytes: file.size,
       uploadUrl: await createSignedUploadUrl({
         key: keys.originalKey,
-        contentType: file.type,
+        contentType: uploadMimeType,
       }),
     });
 
@@ -201,7 +207,6 @@ export async function completeCollectionPhotoUploads(input: {
   const user = await requireContentOwner(input.userId);
   await requireOwnedCollection(input.userId, input.collectionId);
 
-  const previewKeysToCleanup: string[] = [];
   const originalKeysToCleanup = input.uploads.map((upload) =>
     buildCollectionPhotoKeys({
       userId: input.userId,
@@ -213,12 +218,12 @@ export async function completeCollectionPhotoUploads(input: {
   const preparedPhotos: Array<{
     id: string;
     storageKey: string;
-    previewKey: string;
+    previewKey: string | null;
     originalName: string;
     mimeType: string;
     sizeBytes: bigint;
-    width: number;
-    height: number;
+    width: number | null;
+    height: number | null;
   }> = [];
   let projectedUsage = user.storageUsedBytes;
   let totalOriginalBytes = 0n;
@@ -228,7 +233,6 @@ export async function completeCollectionPhotoUploads(input: {
       validateRequestedImageUpload({
         fileName: upload.fileName,
         mimeType: upload.mimeType,
-        sizeBytes: upload.sizeBytes,
       });
 
       const keys = buildCollectionPhotoKeys({
@@ -237,15 +241,12 @@ export async function completeCollectionPhotoUploads(input: {
         objectId: upload.uploadId,
         fileName: upload.fileName,
       });
-      const storedObject = await getStorageObject(keys.originalKey);
-      const image = await processImageBuffer({
-        buffer: Buffer.from(storedObject.bytes),
-        fileName: upload.fileName,
-        mimeType: normalizeMimeType(storedObject.contentType),
-      });
+      const storedObject = await headStorageObject(keys.originalKey);
+      const originalSizeBytes = BigInt(storedObject.contentLength ?? upload.sizeBytes);
+      const mimeType = normalizeMimeType(storedObject.contentType || upload.mimeType);
       const quota = ensureStorageQuota({
         currentUsageBytes: projectedUsage,
-        incomingBytes: image.originalSizeBytes,
+        incomingBytes: originalSizeBytes,
         limitBytes: user.storageLimitBytes,
       });
 
@@ -253,27 +254,19 @@ export async function completeCollectionPhotoUploads(input: {
         throw new AppError("Лимит хранилища будет превышен.", 400);
       }
 
-      await putStorageObject({
-        key: keys.previewKey,
-        body: image.previewBuffer,
-        contentType: "image/webp",
-        cacheControl: "public, max-age=31536000, immutable",
-      });
-      previewKeysToCleanup.push(keys.previewKey);
-
       preparedPhotos.push({
         id: upload.uploadId,
         storageKey: keys.originalKey,
-        previewKey: keys.previewKey,
-        originalName: image.originalName,
-        mimeType: image.mimeType,
-        sizeBytes: image.originalSizeBytes,
-        width: image.width,
-        height: image.height,
+        previewKey: null,
+        originalName: upload.fileName,
+        mimeType,
+        sizeBytes: originalSizeBytes,
+        width: null,
+        height: null,
       });
 
-      projectedUsage += image.originalSizeBytes;
-      totalOriginalBytes += image.originalSizeBytes;
+      projectedUsage += originalSizeBytes;
+      totalOriginalBytes += originalSizeBytes;
     }
 
     await prisma.$transaction([
@@ -288,6 +281,7 @@ export async function completeCollectionPhotoUploads(input: {
           sizeBytes: photo.sizeBytes,
           width: photo.width,
           height: photo.height,
+          processingStatus: "PENDING",
         })),
       }),
       prisma.collection.update({
@@ -310,7 +304,7 @@ export async function completeCollectionPhotoUploads(input: {
 
     return preparedPhotos.length;
   } catch (error) {
-    await deleteStorageObjects([...originalKeysToCleanup, ...previewKeysToCleanup]);
+    await deleteStorageObjects(originalKeysToCleanup);
     throw error;
   }
 }
@@ -349,6 +343,11 @@ export async function getCollectionForPublicPage(shareToken: string) {
     where: { shareToken },
     include: {
       photos: {
+        where: {
+          processingStatus: {
+            not: "FAILED",
+          },
+        },
         orderBy: { createdAt: "asc" },
       },
       user: {
@@ -401,6 +400,10 @@ export async function getPublicPreviewForPhoto(shareToken: string, photoId: stri
     throw new AppError("Фотография не найдена.", 404);
   }
 
+  if (photo.processingStatus !== "READY" || !photo.previewKey) {
+    throw new AppError("Превью еще не готово.", 404);
+  }
+
   return getStorageObject(photo.previewKey);
 }
 
@@ -422,8 +425,11 @@ export async function getPublicOriginalForPhoto(shareToken: string, photoId: str
 
 export async function getOrCreateArchiveForCollection(shareToken: string) {
   const collection = await requireVisiblePublicCollection(shareToken);
+  const downloadablePhotos = collection.photos.filter(
+    (photo) => photo.processingStatus !== "FAILED",
+  );
 
-  if (!collection.photos.length) {
+  if (!downloadablePhotos.length) {
     throw new AppError("В коллекции пока нет фотографий.", 400);
   }
 
@@ -444,7 +450,7 @@ export async function getOrCreateArchiveForCollection(shareToken: string) {
   }
 
   const archiveEntries = await Promise.all(
-    collection.photos.map(async (photo) => {
+    downloadablePhotos.map(async (photo) => {
       const storedObject = await getStorageObject(photo.storageKey);
 
       return {

@@ -1,11 +1,5 @@
 import { slugifyUsernameSegment } from "@/lib/core/username";
 
-const SUPPORTED_IMAGE_MIME_TYPES = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-]);
-
 function buildFileSlug(fileName: string) {
   const lastDotIndex = fileName.lastIndexOf(".");
   const hasExtension = lastDotIndex > 0;
@@ -14,10 +8,6 @@ function buildFileSlug(fileName: string) {
   const normalizedName = slugifyUsernameSegment(name) || "file";
 
   return extension ? `${normalizedName}.${extension}` : normalizedName;
-}
-
-export function isSupportedImageMimeType(mimeType: string) {
-  return SUPPORTED_IMAGE_MIME_TYPES.has(mimeType);
 }
 
 export function buildCollectionPhotoKeys(input: {

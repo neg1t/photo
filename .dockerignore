@@ -1,0 +1,13 @@
+.git
+.github
+.next
+.turbo
+coverage
+node_modules
+output
+tmp
+dist
+*.log
+.env
+.env.production
+.env.local
