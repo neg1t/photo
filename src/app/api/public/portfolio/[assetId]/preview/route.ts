@@ -17,6 +17,10 @@ export async function GET(_request: Request, { params }: RouteProps) {
     return new NextResponse("Not found", { status: 404 });
   }
 
+  if (asset.processingStatus !== "READY" || !asset.previewKey) {
+    return new NextResponse("Not found", { status: 404 });
+  }
+
   const storedObject = await getStorageObject(asset.previewKey);
 
   return new NextResponse(Buffer.from(storedObject.bytes), {

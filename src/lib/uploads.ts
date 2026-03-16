@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const uploadFileSchema = z.object({
   name: z.string().trim().min(1).max(255),
-  type: z.string().trim().min(1).max(120),
+  type: z.string().trim().max(120),
   size: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
 });
 

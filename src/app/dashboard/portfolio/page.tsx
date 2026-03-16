@@ -1,10 +1,10 @@
-import Image from "next/image";
-
 import { DashboardFileUploadForm } from "@/components/dashboard/dashboard-file-upload-form";
+import { MediaTile } from "@/components/media/media-tile";
 import { NoticeBanner } from "@/components/notice-banner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { buildPhotoFileInputAccept } from "@/lib/media-upload";
 import { requireCurrentUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +21,7 @@ export default async function PortfolioPage({
   const error = typeof params.error === "string" ? params.error : undefined;
   const success = typeof params.success === "string" ? params.success : undefined;
   const canUpload = user.accessStatus === "ACTIVE";
+  const photoInputAccept = buildPhotoFileInputAccept();
 
   return (
     <div className="space-y-6">
@@ -32,18 +33,19 @@ export default async function PortfolioPage({
           Отдельная витрина фотографа
         </h2>
         <p className="mt-3 max-w-2xl text-sm leading-7 text-[var(--muted-foreground)]">
-          Портфолио загружается отдельно от клиентских коллекций, но расходует
-          тот же общий лимит хранилища.
+          Портфолио загружается отдельно от клиентских коллекций, но расходует тот
+          же общий лимит хранилища.
         </p>
 
         <div className="mt-6 flex flex-col gap-4 rounded-[24px] bg-[#f8f1e7] p-4 lg:flex-row lg:items-center lg:justify-between">
           <p className="text-sm text-[var(--muted-foreground)]">
-            JPG, PNG и WebP. После выбора файлов загрузка начнется сразу.
+            Поддерживаются фотографии и исходники камер. После выбора файлов
+            загрузка начнется сразу, а превью появятся после фоновой обработки.
           </p>
           <DashboardFileUploadForm
             endpoint="/dashboard/portfolio/upload"
             resultPath="/dashboard/portfolio"
-            accept="image/jpeg,image/png,image/webp"
+            accept={photoInputAccept}
             buttonLabel="Добавить в портфолио"
             pendingLabel="Загружаем портфолио..."
             disabled={!canUpload}
@@ -53,26 +55,21 @@ export default async function PortfolioPage({
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {user.portfolioAssets.map((asset) => (
-          <Card key={asset.id} className="overflow-hidden p-0">
-            <Image
-              src={`/api/public/portfolio/${asset.id}/preview`}
-              alt={asset.originalName}
-              width={asset.width}
-              height={asset.height}
-              className="aspect-[4/3] h-auto w-full object-cover"
-            />
-            <div className="space-y-3 p-4">
-              <p className="line-clamp-1 font-medium">{asset.originalName}</p>
-              <form
-                action={`/dashboard/portfolio/${asset.id}/delete`}
-                method="post"
-              >
+          <MediaTile
+            key={asset.id}
+            name={asset.originalName}
+            status={asset.processingStatus}
+            previewSrc={`/api/public/portfolio/${asset.id}/preview`}
+            width={asset.width}
+            height={asset.height}
+            footer={
+              <form action={`/dashboard/portfolio/${asset.id}/delete`} method="post">
                 <Button type="submit" variant="danger" size="sm">
                   Удалить
                 </Button>
               </form>
-            </div>
-          </Card>
+            }
+          />
         ))}
 
         {!user.portfolioAssets.length ? (

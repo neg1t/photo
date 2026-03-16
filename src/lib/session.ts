@@ -16,11 +16,23 @@ export async function getCurrentUser() {
       profile: true,
       collections: {
         include: {
-          photos: true,
+          photos: {
+            where: {
+              processingStatus: {
+                not: "FAILED",
+              },
+            },
+            orderBy: { createdAt: "asc" },
+          },
         },
         orderBy: { createdAt: "desc" },
       },
       portfolioAssets: {
+        where: {
+          processingStatus: {
+            not: "FAILED",
+          },
+        },
         orderBy: { sortOrder: "asc" },
       },
       services: {

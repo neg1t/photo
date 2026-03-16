@@ -1,12 +1,13 @@
-import Image from "next/image";
 import Link from "next/link";
 
 import { DashboardFileUploadForm } from "@/components/dashboard/dashboard-file-upload-form";
+import { MediaTile } from "@/components/media/media-tile";
 import { NoticeBanner } from "@/components/notice-banner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { buildPhotoFileInputAccept } from "@/lib/media-upload";
 import { requireCurrentUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +24,7 @@ export default async function CollectionsPage({
   const error = typeof params.error === "string" ? params.error : undefined;
   const success = typeof params.success === "string" ? params.success : undefined;
   const canUpload = user.accessStatus === "ACTIVE";
+  const photoInputAccept = buildPhotoFileInputAccept();
 
   return (
     <div className="space-y-6">
@@ -34,9 +36,8 @@ export default async function CollectionsPage({
           Новая съемка
         </h2>
         <p className="mt-3 max-w-2xl text-sm leading-7 text-[var(--muted-foreground)]">
-          Создайте коллекцию, укажите срок хранения и сразу загрузите
-          фотографии пачкой. После публикации клиент откроет галерею по
-          отдельной ссылке.
+          Создайте коллекцию, укажите срок хранения и сразу загрузите фотографии
+          пачкой. После публикации клиент откроет галерею по отдельной ссылке.
         </p>
 
         <form
@@ -72,8 +73,7 @@ export default async function CollectionsPage({
                     <Badge>{collection.status}</Badge>
                   </div>
                   <p className="text-sm text-[var(--muted-foreground)]">
-                    Хранение до{" "}
-                    {collection.expiresAt.toLocaleDateString("ru-RU")} •{" "}
+                    Хранение до {collection.expiresAt.toLocaleDateString("ru-RU")} •{" "}
                     {collection.photos.length} фото
                   </p>
                   {publicLink ? (
@@ -103,12 +103,13 @@ export default async function CollectionsPage({
 
               <div className="mt-6 flex flex-col gap-4 rounded-[24px] bg-[#f8f1e7] p-4 lg:flex-row lg:items-center lg:justify-between">
                 <p className="text-sm text-[var(--muted-foreground)]">
-                  JPG, PNG и WebP. После выбора файлов загрузка начнется сразу.
+                  Поддерживаются фотографии и исходники камер. После выбора файлов
+                  загрузка начнется сразу, а превью появятся после фоновой обработки.
                 </p>
                 <DashboardFileUploadForm
                   endpoint={`/dashboard/collections/${collection.id}/upload`}
                   resultPath="/dashboard/collections"
-                  accept="image/jpeg,image/png,image/webp"
+                  accept={photoInputAccept}
                   buttonLabel="Загрузить фото"
                   pendingLabel="Загружаем фото..."
                   disabled={!canUpload}
@@ -118,27 +119,18 @@ export default async function CollectionsPage({
               {collection.photos.length ? (
                 <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   {collection.photos.map((photo) => (
-                    <div
+                    <MediaTile
                       key={photo.id}
-                      className="overflow-hidden rounded-[22px] border border-black/8 bg-white/70"
-                    >
-                      {collection.shareToken ? (
-                        <Image
-                          src={`/api/public/collections/${collection.shareToken}/photos/${photo.id}/preview`}
-                          alt={photo.originalName}
-                          width={photo.width}
-                          height={photo.height}
-                          className="aspect-[4/3] h-auto w-full object-cover"
-                        />
-                      ) : (
-                        <div className="aspect-[4/3] bg-[#efe3d3]" />
-                      )}
-                      <div className="p-3 text-sm">
-                        <p className="line-clamp-1 font-medium">
-                          {photo.originalName}
-                        </p>
-                      </div>
-                    </div>
+                      name={photo.originalName}
+                      status={photo.processingStatus}
+                      previewSrc={
+                        collection.shareToken
+                          ? `/api/public/collections/${collection.shareToken}/photos/${photo.id}/preview`
+                          : undefined
+                      }
+                      width={photo.width}
+                      height={photo.height}
+                    />
                   ))}
                 </div>
               ) : null}

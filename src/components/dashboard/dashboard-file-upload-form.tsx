@@ -105,7 +105,7 @@ export function DashboardFileUploadForm({
         const uploadResponse = await fetch(upload.uploadUrl, {
           method: "PUT",
           headers: {
-            "Content-Type": file.type,
+            "Content-Type": upload.mimeType,
           },
           body: file,
         });

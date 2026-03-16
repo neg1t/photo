@@ -26,6 +26,14 @@ enum PriceType {
   PER_HOUR
 }
 
+enum MediaProcessingStatus {
+  PENDING
+  PROCESSING
+  READY
+  ORIGINAL_ONLY
+  FAILED
+}
+
 model User {
   id                String               @id @default(cuid())
   email             String               @unique
@@ -73,33 +81,46 @@ model Collection {
 }
 
 model Photo {
-  id           String     @id @default(cuid())
-  collectionId String
-  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
-  storageKey   String
-  previewKey   String
-  originalName String
-  mimeType     String
-  sizeBytes    BigInt
-  width        Int
-  height       Int
-  createdAt    DateTime   @default(now())
+  id                  String                @id @default(cuid())
+  collectionId        String
+  collection          Collection            @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  storageKey          String
+  previewKey          String?
+  originalName        String
+  mimeType            String
+  sizeBytes           BigInt
+  width               Int?
+  height              Int?
+  processingStatus    MediaProcessingStatus @default(PENDING)
+  processingError     String?
+  processedAt         DateTime?
+  processingStartedAt DateTime?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  @@index([processingStatus, createdAt])
 }
 
 model PortfolioAsset {
-  id           String   @id @default(cuid())
-  userId       String
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  storageKey   String
-  previewKey   String
-  originalName String
-  mimeType     String
-  sizeBytes    BigInt
-  width        Int
-  height       Int
-  sortOrder    Int      @default(0)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                  String                @id @default(cuid())
+  userId              String
+  user                User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  storageKey          String
+  previewKey          String?
+  originalName        String
+  mimeType            String
+  sizeBytes           BigInt
+  width               Int?
+  height              Int?
+  processingStatus    MediaProcessingStatus @default(PENDING)
+  processingError     String?
+  processedAt         DateTime?
+  processingStartedAt DateTime?
+  sortOrder           Int                   @default(0)
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  @@index([processingStatus, createdAt])
 }
 
 model Service {

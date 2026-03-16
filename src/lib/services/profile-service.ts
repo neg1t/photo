@@ -89,6 +89,11 @@ export async function getPublicProfileByUsername(username: string) {
       user: {
         include: {
           portfolioAssets: {
+            where: {
+              processingStatus: {
+                not: "FAILED",
+              },
+            },
             orderBy: { sortOrder: "asc" },
           },
           services: {

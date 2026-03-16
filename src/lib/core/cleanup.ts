@@ -2,7 +2,7 @@ import type { CollectionStatus } from "@/lib/core/collections";
 
 type CleanupPhoto = {
   storageKey: string;
-  previewKey: string;
+  previewKey: string | null;
   sizeBytes: bigint;
 };
 
@@ -24,10 +24,11 @@ export function buildCollectionCleanupPlan(collection: CleanupCollection) {
     return null;
   }
 
-  const keysToDelete = collection.photos.flatMap((photo) => [
-    photo.storageKey,
-    photo.previewKey,
-  ]);
+  const keysToDelete = collection.photos.flatMap((photo) =>
+    [photo.storageKey, photo.previewKey].filter(
+      (key): key is string => Boolean(key),
+    ),
+  );
   const releasableBytes = collection.photos.reduce(
     (sum, photo) => sum + photo.sizeBytes,
     0n,

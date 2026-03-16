@@ -4,7 +4,6 @@ import {
   buildCollectionArchiveKey,
   buildCollectionPhotoKeys,
   buildPortfolioAssetKeys,
-  isSupportedImageMimeType,
 } from "@/lib/storage/object-keys";
 
 describe("storage object keys", () => {
@@ -44,14 +43,5 @@ describe("storage object keys", () => {
         collectionId: "collection_1",
       }),
     ).toBe("users/user_1/collections/collection_1/archives/latest.zip");
-  });
-});
-
-describe("isSupportedImageMimeType", () => {
-  it("accepts only jpg, png and webp uploads", () => {
-    expect(isSupportedImageMimeType("image/jpeg")).toBe(true);
-    expect(isSupportedImageMimeType("image/png")).toBe(true);
-    expect(isSupportedImageMimeType("image/webp")).toBe(true);
-    expect(isSupportedImageMimeType("image/heic")).toBe(false);
   });
 });

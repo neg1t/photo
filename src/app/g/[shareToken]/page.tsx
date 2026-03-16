@@ -1,7 +1,7 @@
-import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { MediaTile } from "@/components/media/media-tile";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -74,23 +74,21 @@ export default async function PublicCollectionPage({
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {collection.photos.map((photo) => (
-          <Card key={photo.id} className="overflow-hidden p-0">
-            <Image
-              src={`/api/public/collections/${shareToken}/photos/${photo.id}/preview`}
-              alt={photo.originalName}
-              width={photo.width}
-              height={photo.height}
-              className="aspect-[4/3] h-auto w-full object-cover"
-            />
-            <div className="space-y-3 p-4">
-              <p className="line-clamp-1 font-medium">{photo.originalName}</p>
+          <MediaTile
+            key={photo.id}
+            name={photo.originalName}
+            status={photo.processingStatus}
+            previewSrc={`/api/public/collections/${shareToken}/photos/${photo.id}/preview`}
+            width={photo.width}
+            height={photo.height}
+            footer={
               <Button asChild variant="secondary" size="sm">
                 <a href={`/api/public/collections/${shareToken}/photos/${photo.id}/download`}>
                   Скачать оригинал
                 </a>
               </Button>
-            </div>
-          </Card>
+            }
+          />
         ))}
       </section>
     </main>
