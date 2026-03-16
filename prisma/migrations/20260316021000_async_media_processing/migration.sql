@@ -26,8 +26,7 @@ ALTER TABLE "PortfolioAsset"
     ADD COLUMN "processingStatus" "MediaProcessingStatus" NOT NULL DEFAULT 'PENDING',
     ADD COLUMN "processingError" TEXT,
     ADD COLUMN "processedAt" TIMESTAMP(3),
-    ADD COLUMN "processingStartedAt" TIMESTAMP(3),
-    ADD COLUMN "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
+    ADD COLUMN "processingStartedAt" TIMESTAMP(3);
 
 -- Backfill existing media
 UPDATE "Photo"
@@ -50,7 +49,4 @@ ON "PortfolioAsset"("processingStatus", "createdAt");
 
 -- Cleanup defaults used only for backfill
 ALTER TABLE "Photo"
-    ALTER COLUMN "updatedAt" DROP DEFAULT;
-
-ALTER TABLE "PortfolioAsset"
     ALTER COLUMN "updatedAt" DROP DEFAULT;
